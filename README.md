@@ -1,4 +1,4 @@
-This Repo Contains all my flutter projects 
+The purpose of this Repository is to demonstrate my Progress in Flutter SDK and Dart project. This Repository contain all my Flutter Projects.
 
 
 # How to Run Flutter Apps
@@ -17,3 +17,7 @@ $ Flutter build apk
 or alternativly   
 
 $ Flutter build apk --release
+
+
+# About Me
+This repository is created by @hurairamuzammal
