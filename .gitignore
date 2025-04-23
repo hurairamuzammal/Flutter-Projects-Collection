@@ -10,6 +10,7 @@
 .svn/
 migrate_working_dir/
 #sensitive file
+9.chat_app/lib/firebase_options.dart
 google-services.json
 
 # IntelliJ related
