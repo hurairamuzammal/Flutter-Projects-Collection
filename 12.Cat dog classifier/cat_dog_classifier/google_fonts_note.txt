@@ -1,0 +1,2 @@
+// Add this to your pubspec.yaml under dependencies:
+// google_fonts: ^6.1.0
