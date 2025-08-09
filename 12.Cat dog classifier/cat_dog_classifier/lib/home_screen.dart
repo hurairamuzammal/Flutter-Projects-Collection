@@ -31,10 +31,27 @@ class _HomeScreenState extends State<HomeScreen> {
       isLoading = true;
     });
     try {
-      interpreter = await Interpreter.fromAsset('model.tflite');
-      print('Model loaded successfully.');
-    } catch (e) {
-      print('Failed to load model: $e');
+      // Try loading with full asset path as in pubspec.yaml
+      interpreter = await Interpreter.fromAsset('assets/model.tflite');
+      print('Model loaded successfully from assets/model.tflite');
+    } catch (e1) {
+      try {
+        // Fallback: try loading with just the filename (legacy behavior)
+        interpreter = await Interpreter.fromAsset('model.tflite');
+        print('Model loaded successfully from model.tflite');
+      } catch (e2) {
+        print('Failed to load model: $e1 | $e2');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Failed to load model. Check assets and pubspec.yaml.\n$e1',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     } finally {
       setState(() {
         isLoading = false;
@@ -119,7 +136,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    // Use Material You dynamic color for background, AppBar, and buttons
     return Scaffold(
+      backgroundColor: colorScheme.background,
       appBar: AppBar(
         title: Text(
           'Cat vs Dog Classifier',
@@ -131,6 +150,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         backgroundColor: colorScheme.primary,
         centerTitle: true,
+        elevation: 0,
       ),
       body: Center(
         child: SingleChildScrollView(
