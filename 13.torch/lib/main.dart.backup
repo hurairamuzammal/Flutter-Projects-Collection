@@ -1,0 +1,827 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:torch_light/torch_light.dart';
+import 'sound_manager.dart';
+import 'dart:async';
+
+// Set this to false in tests to avoid invoking platform channels.
+// In your app it remains true so real hardware is used.
+bool enableTorchHardware = true;
+
+void main() {
+  runApp(const TorchApp());
+}
+
+class TorchApp extends StatelessWidget {
+  const TorchApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Torch',
+      theme: ThemeData(
+        // Google's Material dark theme colors
+        colorScheme: const ColorScheme.dark(
+          brightness: Brightness.dark,
+          primary: Colors.white,
+          onPrimary: Colors.black,
+          secondary: Colors.white70,
+          surface: Color(0xFF121212), // Google's dark surface
+          onSurface: Colors.white,
+          background: Color(0xFF000000), // Pure black background
+          onBackground: Colors.white,
+          surfaceVariant: Color(0xFF1E1E1E),
+        ),
+        scaffoldBackgroundColor: const Color(0xFF000000),
+        useMaterial3: true,
+      ),
+      home: const TorchHome(),
+    );
+  }
+}
+
+enum TorchMode { normal, sos, strobe, screenLight }
+
+enum ScreenLightColor { white, red, green, blue, amber }
+
+class TorchHome extends StatefulWidget {
+  const TorchHome({super.key});
+
+  @override
+  State<TorchHome> createState() => _TorchHomeState();
+}
+
+class _TorchHomeState extends State<TorchHome> with TickerProviderStateMixin {
+  bool _isOn = false;
+  bool _isAvailable = !kIsWeb;
+  String? _error;
+  bool _isPatternRunning = false; // Track if SOS/Strobe pattern is running
+
+  // Settings
+  bool _soundEnabled = true;
+  double _brightness = 1.0;
+  bool _showSettings = false;
+  bool _showModeMenu = false;
+
+  // Modes
+  TorchMode _currentMode = TorchMode.normal;
+  ScreenLightColor _screenColor = ScreenLightColor.white;
+
+  // Flash patterns
+  Timer? _flashTimer;
+
+  // Animations
+  late AnimationController _pulseController;
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Mode buttons - animated expansion
+          AnimatedBuilder(
+            animation: _menuAnimation,
+            builder: (context, child) => SizeTransition(
+              sizeFactor: _menuAnimation,
+              axisAlignment: -1.0,
+              child: FadeTransition(
+                opacity: _menuAnimation,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (_showModeMenu) ...[
+                      _buildAnimatedModeButton(
+                        TorchMode.screenLight,
+                        Icons.light_mode,
+                        'Screen',
+                        0,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildAnimatedModeButton(
+                        TorchMode.strobe,
+                        Icons.flash_on,
+                        'Strobe',
+                        1,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildAnimatedModeButton(
+                        TorchMode.sos,
+                        Icons.sos,
+                        'SOS',
+                        2,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildAnimatedModeButton(
+                        TorchMode.normal,
+                        Icons.flashlight_on,
+                        'Torch',
+                        3,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Main menu button
+          FloatingActionButton(
+            heroTag: "menu_fab",
+            onPressed: () {
+              setState(() => _showModeMenu = !_showModeMenu);
+              if (_showModeMenu) {
+                _menuController.forward();
+              } else {
+                _menuController.reverse();
+              }
+            },
+            backgroundColor: Colors.amber,
+            foregroundColor: Colors.black,
+            child: AnimatedRotation(
+              turns: _showModeMenu ? 0.125 : 0.0,
+              duration: const Duration(milliseconds: 300),
+              child: const Icon(Icons.apps),
+            ),
+          ),
+        ],
+      );
+    }
+
+    Widget _buildAnimatedModeButton(
+      TorchMode mode,
+      IconData icon,
+      String label,
+      int index,
+    ) {
+      return AnimatedBuilder(
+        animation: _menuAnimation,
+        builder: (context, child) => Transform.translate(
+          offset: Offset(
+            (1 - _menuAnimation.value) * 50,
+            0,
+          ),
+          child: Transform.scale(
+            scale: 0.8 + (_menuAnimation.value * 0.2),
+            child: _buildFloatingModeButton(mode, icon, label),
+          ),
+        ),
+      );
+    }
+
+    Widget _buildFloatingModeButton(TorchMode mode, IconData icon, String label) {
+      final isSelected = _currentMode == mode;
+      return GestureDetector(
+        onTap: () async {
+          // Play mode change sound with haptic feedback
+          await SoundManager.playModeChangeSound();
+        
+          _stopFlashPattern();
+          _toggleTorch(false);
+          setState(() {
+            _currentMode = mode;
+            _isOn = false;
+            _showModeMenu = false;
+          });
+          _menuController.reverse(); // Close menu with animation
+          _pulseController.stop();
+          _pulseController.reset();
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.amber : const Color(0xFF2D2D2D),
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: (isSelected ? Colors.amber : Colors.black).withOpacity(0.3),
+                blurRadius: isSelected ? 8 : 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+  void initState() {
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.black : Colors.white,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 16,
+      // Pulse animation for main button
+      if (mounted) setState(() => _isAvailable = available);
+            const SizedBox(width: 8),
+            Icon(
+              icon,
+              size: 20,
+              color: isSelected ? Colors.black : Colors.white,
+            ),
+    } catch (e) {
+          ),
+        ),
+        setState(() {
+          _isAvailable = false;
+    _isPatternRunning = true;
+
+    void executeStep() {
+      if (!_isPatternRunning || _flashTimer == null) return;
+
+      if (step >= sosPattern.length) {
+        step = 0;
+        shouldFlash = true;
+      }
+
+      final duration = sosPattern[step];
+
+      if (shouldFlash) {
+        _toggleTorch(true);
+      } else {
+        _toggleTorch(false);
+      }
+
+      step++;
+      shouldFlash = !shouldFlash;
+
+      _flashTimer = Timer(Duration(milliseconds: duration), executeStep);
+    }
+
+    executeStep();
+  }
+
+  void _startStrobe() {
+    bool strobeState = false;
+    _isPatternRunning = true;
+
+    _flashTimer = Timer.periodic(
+      Duration(milliseconds: (500 / _brightness).round()),
+      (timer) {
+        if (!_isPatternRunning) {
+          timer.cancel();
+          return;
+        }
+        strobeState = !strobeState;
+        _toggleTorch(strobeState);
+      },
+    );
+  }
+
+  void _toggleMode() async {
+    switch (_currentMode) {
+      case TorchMode.normal:
+        final newState = !_isOn;
+        setState(() => _isOn = newState);
+        await _playSound(newState);
+        await _toggleTorch(newState);
+
+        if (newState) {
+          _pulseController.repeat(reverse: true);
+        } else {
+          _pulseController.stop();
+          _pulseController.reset();
+        }
+        break;
+
+      case TorchMode.sos:
+        if (!_isOn) {
+          setState(() => _isOn = true);
+          await _playSound(true);
+          _startSOS();
+          _pulseController.repeat(reverse: true);
+        } else {
+          setState(() => _isOn = false);
+          await _playSound(false);
+          _stopFlashPattern();
+          await _toggleTorch(false); // Ensure torch is turned off
+          _pulseController.stop();
+          _pulseController.reset();
+        }
+        break;
+
+      case TorchMode.strobe:
+        if (!_isOn) {
+          setState(() => _isOn = true);
+          await _playSound(true);
+          _startStrobe();
+          _pulseController.repeat(reverse: true);
+        } else {
+          setState(() => _isOn = false);
+          await _playSound(false);
+          _stopFlashPattern();
+          await _toggleTorch(false); // Ensure torch is turned off
+          _pulseController.stop();
+          _pulseController.reset();
+        }
+        break;
+
+      case TorchMode.screenLight:
+        setState(() => _isOn = !_isOn);
+        await _playSound(_isOn);
+        if (_isOn) {
+          _pulseController.repeat(reverse: true);
+        } else {
+          _pulseController.stop();
+          _pulseController.reset();
+        }
+        break;
+    }
+  }
+
+  Color _getScreenLightColor() {
+    switch (_screenColor) {
+      case ScreenLightColor.white:
+        return Colors.white;
+      case ScreenLightColor.red:
+        return Colors.red;
+      case ScreenLightColor.green:
+        return Colors.green;
+      case ScreenLightColor.blue:
+        return Colors.blue;
+      case ScreenLightColor.amber:
+        return Colors.amber;
+    }
+  }
+
+  Color _getButtonColor() {
+    if (_currentMode == TorchMode.screenLight && _isOn) {
+      return _getScreenLightColor();
+    }
+    return _isOn ? Colors.amber : const Color(0xFF2D2D2D);
+  }
+
+  Widget _buildColorPicker() {
+    if (_currentMode != TorchMode.screenLight) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: ScreenLightColor.values.map((color) {
+          final isSelected = _screenColor == color;
+          return GestureDetector(
+            onTap: () => setState(() => _screenColor = color),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: _getScreenLightColorForPicker(color),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isSelected ? Colors.white : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Color _getScreenLightColorForPicker(ScreenLightColor color) {
+    switch (color) {
+      case ScreenLightColor.white:
+        return Colors.white;
+      case ScreenLightColor.red:
+        return Colors.red;
+      case ScreenLightColor.green:
+        return Colors.green;
+      case ScreenLightColor.blue:
+        return Colors.blue;
+      case ScreenLightColor.amber:
+        return Colors.amber;
+    }
+  }
+
+  Widget _buildSettingsPanel() {
+    return AnimatedOpacity(
+      opacity: _showSettings ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 200),
+      child: Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E1E1E),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Sound Effects',
+                  style: TextStyle(color: Colors.white),
+                ),
+                Switch(
+                  value: _soundEnabled,
+                  onChanged: (value) {
+                    setState(() => _soundEnabled = value);
+                    SoundManager.soundEnabled = value;
+                  },
+                  activeColor: Colors.amber,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Brightness slider for screen light mode
+            if (_currentMode == TorchMode.screenLight) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Icon(
+                    Icons.brightness_low,
+                    color: Colors.white70,
+                    size: 20,
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: _brightness,
+                      onChanged: (value) => setState(() => _brightness = value),
+                      activeColor: _getScreenLightColor(),
+                      inactiveColor: Colors.white24,
+                      min: 0.1,
+                      max: 1.0,
+                      divisions: 9,
+                      label: '${(_brightness * 100).round()}%',
+                    ),
+                  ),
+                  Icon(
+                    Icons.brightness_high,
+                    color: Colors.white70,
+                    size: 20,
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Screen Light Brightness: ',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  Text(
+                    '${(_brightness * 100).round()}%',
+                    style: TextStyle(
+                      color: _getScreenLightColor(),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            
+            // Speed control for SOS/Strobe modes
+            if (_currentMode == TorchMode.sos || _currentMode == TorchMode.strobe) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Text(
+                    'Pattern Speed',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: _brightness,
+                      onChanged: (value) => setState(() => _brightness = value),
+                      activeColor: Colors.amber,
+                      min: 0.5,
+                      max: 2.0,
+                      divisions: 6,
+                      label: '${_brightness.toStringAsFixed(1)}x',
+                    ),
+                  ),
+                  Text(
+                    '${_brightness.toStringAsFixed(1)}x',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExpandableModeMenu() {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment:
+            CrossAxisAlignment.end, // Changed to align to the right
+        children: [
+          // Mode buttons - shown when expanded
+          if (_showModeMenu) ...[
+            _buildFloatingModeButton(
+              TorchMode.screenLight,
+              Icons.light_mode,
+              'Screen',
+            ),
+            const SizedBox(height: 8),
+            _buildFloatingModeButton(
+              TorchMode.strobe,
+              Icons.flash_on,
+              'Strobe',
+            ),
+            const SizedBox(height: 8),
+            _buildFloatingModeButton(TorchMode.sos, Icons.sos, 'SOS'),
+            const SizedBox(height: 8),
+            _buildFloatingModeButton(
+              TorchMode.normal,
+              Icons.flashlight_on,
+              'Torch',
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Main mode toggle button
+          FloatingActionButton(
+            onPressed: () {
+              setState(() => _showModeMenu = !_showModeMenu);
+              if (_showModeMenu) {
+                _menuController.forward();
+              } else {
+                _menuController.reverse();
+              }
+            },
+            backgroundColor: Colors.amber,
+            child: AnimatedRotation(
+              turns: _showModeMenu ? 0.125 : 0,
+              duration: const Duration(milliseconds: 300),
+              child: Icon(
+                _showModeMenu ? Icons.close : Icons.menu,
+                color: Colors.black,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFloatingModeButton(TorchMode mode, IconData icon, String label) {
+    final isSelected = _currentMode == mode;
+    return GestureDetector(
+      onTap: () async {
+        // Play mode change sound with haptic feedback
+        await SoundManager.playModeChangeSound();
+        
+        _stopFlashPattern();
+        _toggleTorch(false);
+        setState(() {
+          _currentMode = mode;
+          _isOn = false;
+          _showModeMenu = false;
+        });
+        _pulseController.stop();
+        _pulseController.reset();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.amber : const Color(0xFF2D2D2D),
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: (isSelected ? Colors.amber : Colors.black).withOpacity(
+                0.3,
+              ),
+              blurRadius: isSelected ? 8 : 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.black : Colors.white,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              icon,
+              size: 20,
+              color: isSelected ? Colors.black : Colors.white,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final buttonSize = size.shortestSide * 0.5;
+
+    // Screen light background with enhanced brightness control
+    final backgroundColor = (_currentMode == TorchMode.screenLight && _isOn)
+        ? _getScreenLightColor().withOpacity(_brightness)
+        : Colors.black;
+
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // Main content - centered torch button
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Current mode indicator
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.amber, width: 1),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(_getModeIcon(), size: 20, color: Colors.amber),
+                        const SizedBox(width: 8),
+                        Text(
+                          _getModeDisplayName(),
+                          style: const TextStyle(
+                            color: Colors.amber,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // Color picker for screen light mode
+                  _buildColorPicker(),
+
+                  const SizedBox(height: 32),
+
+                  // Main torch button
+                  AnimatedBuilder(
+                    animation: _pulseAnimation,
+                    builder: (context, child) {
+                      return Transform.scale(
+                        scale: _isOn ? _pulseAnimation.value : 1.0,
+                        child: Semantics(
+                          button: true,
+                          label: _getModeLabel(),
+                          child: SizedBox(
+                            width: buttonSize.clamp(180, 320),
+                            height: buttonSize.clamp(180, 320),
+                            child: ElevatedButton(
+                              onPressed: _isAvailable ? _toggleMode : null,
+                              style: ElevatedButton.styleFrom(
+                                shape: const CircleBorder(),
+                                backgroundColor: _getButtonColor(),
+                                foregroundColor: _isOn
+                                    ? Colors.black
+                                    : Colors.white,
+                                elevation: _isOn ? 16 : 8,
+                                shadowColor: _getButtonColor().withOpacity(0.6),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    _getModeIcon(),
+                                    size: 64,
+                                    color: _isOn ? Colors.black : Colors.white,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _isOn ? 'ON' : 'OFF',
+                                    style: const TextStyle(
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 3,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // Status text
+                  if (!_isAvailable)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                      child: Text(
+                        _error != null
+                            ? 'Flashlight unavailable:\n$_error'
+                            : 'Flashlight not available on this device.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            // Bottom-right expandable mode menu
+            Positioned(
+              bottom: 20,
+              right: 20,
+              child: _buildExpandableModeMenu(),
+            ),
+
+            // Settings button (top-right)
+            Positioned(
+              top: 16,
+              right: 16,
+              child: IconButton(
+                onPressed: () => setState(() => _showSettings = !_showSettings),
+                icon: Icon(
+                  _showSettings ? Icons.close : Icons.settings,
+                  color: Colors.white70,
+                  size: 28,
+                ),
+              ),
+            ),
+
+            // Settings panel
+            if (_showSettings)
+              Positioned(
+                top: 60,
+                left: 0,
+                right: 0,
+                child: _buildSettingsPanel(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _getModeIcon() {
+    switch (_currentMode) {
+      case TorchMode.normal:
+        return Icons.flashlight_on;
+      case TorchMode.sos:
+        return Icons.sos;
+      case TorchMode.strobe:
+        return Icons.flash_on;
+      case TorchMode.screenLight:
+        return Icons.light_mode;
+    }
+  }
+
+  String _getModeLabel() {
+    final state = _isOn ? 'on' : 'off';
+    switch (_currentMode) {
+      case TorchMode.normal:
+        return 'Turn flashlight $state';
+      case TorchMode.sos:
+        return 'Turn SOS mode $state';
+      case TorchMode.strobe:
+        return 'Turn strobe mode $state';
+      case TorchMode.screenLight:
+        return 'Turn screen light $state';
+    }
+  }
+
+  String _getModeDisplayName() {
+    switch (_currentMode) {
+      case TorchMode.normal:
+        return 'Torch';
+      case TorchMode.sos:
+        return 'SOS';
+      case TorchMode.strobe:
+        return 'Strobe';
+      case TorchMode.screenLight:
+        return 'Screen Light';
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopFlashPattern();
+    _pulseController.dispose();
+    SoundManager.dispose();
+    super.dispose();
+  }
+}
